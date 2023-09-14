@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+
 from statsmodels.tsa.stattools import adfuller
 from datetime import datetime, timedelta
 
@@ -10,8 +11,16 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.neighbors import KNeighborsRegressor
+from sklearn.svm import SVR
+from sklearn.linear_model import LinearRegression
+from sklearn.neural_network import MLPRegressor
+from sklearn.linear_model import Lasso
+from sklearn.linear_model import Ridge
+from sklearn.linear_model import ElasticNet
 
 
+
+import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import *
 from tensorflow.keras.callbacks import ModelCheckpoint
@@ -105,9 +114,11 @@ def df_to_windowed_df(dataframe, n=3, every_x_minute=1):
   X, Y = [], []
 
   last_time = False
+  i = 0
   try:
     while True:
       df_subset = dataframe.loc[:target_date].tail(n+1)
+      i += 1
       
       if len(df_subset) != n+1:
         print(f'Error: Window of size {n} is too large for date {target_date}')
@@ -120,7 +131,7 @@ def df_to_windowed_df(dataframe, n=3, every_x_minute=1):
       X.append(x)
       Y.append(y)
 
-      next_date = target_date+timedelta(minutes=every_x_minute)
+      next_date = target_date+timedelta(minutes=1)
       
       if last_time:
         break
@@ -167,6 +178,7 @@ def get_performance(predicted_values, real_values, model_name):
   print("Coefficient of determination: "+str(r2))
   print()
 
+
 def predict_with_random_forest(dates_train, dates_test, X_train, y_train, X_test, y_test):
   print("Prediction using Random Forest is being made...")
   rf_model = RandomForestRegressor(random_state=0, n_jobs=-1).fit(X_train, y_train)
@@ -194,13 +206,12 @@ def predict_with_kNN(dates_train, dates_test, X_train, y_train, X_test, y_test):
 
   return knn_train_results
 
-def predict_with_LSTM(dates_train, dates_test, X_train, y_train, X_test, y_test, epochs_value=10):
+def predict_with_LSTM(dates_train, dates_test, X_train, y_train, X_test, y_test, epochs_value=100):
   print("Prediction using LSTM is being made...")
   lstm_model = Sequential()
   lstm_model.add(InputLayer((X_train.shape[1], 1)))
   lstm_model.add(LSTM(64))
-  lstm_model.add(Dense(8, 'relu'))
-  lstm_model.add(Dense(1, 'linear'))
+  lstm_model.add(Dense(1))
 
   lstm_model.summary()
 
@@ -212,39 +223,129 @@ def predict_with_LSTM(dates_train, dates_test, X_train, y_train, X_test, y_test,
 
   return lstm_train_results
 
-def predict_with_RBF(dates_train, dates_test, X_train, y_train, X_test, y_test, epochs_value=10):
-  print("Prediction using RBF is being made...")
+def predict_with_SVR(dates_train, dates_test, X_train, y_train, X_test, y_test):
+  print("Prediction using SVR is being made...")
+  svr_model = SVR(kernel="rbf", C=100, gamma=0.1, epsilon=0.1).fit(X_train, y_train)
+  svr_model_results = svr_model.predict(X_test)
 
-  rbf_model = Sequential()
-  rbf_model.add(InputLayer((X_train.shape[1], 1)))
-  rbf_model.add(RBFLayer(64))
-  rbf_model.add(Dense(8, 'relu'))
-  rbf_model.add(Dense(1, 'linear'))
-  
+  svr_train_results = pd.DataFrame(data={'Timestamp':dates_test, 'Predicted Values':svr_model_results, 'Real Values':y_test})
 
-  rbf_model.summary()
+  return svr_train_results
 
-  rbf_model.compile(loss='binary_crossentropy', optimizer='adam')
-  rbf_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs_value)
+def predict_with_MLR(dates_train, dates_test, X_train, y_train, X_test, y_test):
+  print("Prediction using MLR is being made...")
+  mlr_model = LinearRegression().fit(X_train, y_train)
+  mlr_model_results = mlr_model.predict(X_test)
 
-  rbf_model_results = rbf_model.predict(X_test).flatten()
-  print(rbf_model_results)
-  print(rbf_model_results.shape, y_test.shape, dates_test.shape)
-  rbf_train_results = pd.DataFrame(data={'Timestamp':dates_test, 'Predicted Values':rbf_model_results, 'Real Values':y_test})
+  mlr_train_results = pd.DataFrame(data={'Timestamp':dates_test, 'Predicted Values':mlr_model_results, 'Real Values':y_test})
 
-  return rbf_train_results
+  return mlr_train_results
 
+def predict_with_MLP(dates_train, dates_test, X_train, y_train, X_test, y_test):
+  print("Prediction using MLP is being made...")
+  mlp_model = MLPRegressor(random_state=1, max_iter=500).fit(X_train, y_train)
+  mlp_model_results = mlp_model.predict(X_test)
 
+  mlr_train_results = pd.DataFrame(data={'Timestamp':dates_test, 'Predicted Values':mlp_model_results, 'Real Values':y_test})
 
+  return mlr_train_results
+
+def predict_with_Lasso(dates_train, dates_test, X_train, y_train, X_test, y_test):
+  print("Prediction using Lasso Regression is being made...")
+  lasso_model = Lasso().fit(X_train, y_train)
+  lasso_model_results = lasso_model.predict(X_test)
+
+  lasso_train_results = pd.DataFrame(data={'Timestamp':dates_test, 'Predicted Values':lasso_model_results, 'Real Values':y_test})
+
+  return lasso_train_results
+
+def predict_with_Ridge(dates_train, dates_test, X_train, y_train, X_test, y_test):
+  print("Prediction using Ridge Regression is being made...")
+  ridge_model = Ridge().fit(X_train, y_train)
+  ridge_model_results = ridge_model.predict(X_test)
+
+  ridge_train_results = pd.DataFrame(data={'Timestamp':dates_test, 'Predicted Values':ridge_model_results, 'Real Values':y_test})
+
+  return ridge_train_results
+
+def predict_with_Elastic(dates_train, dates_test, X_train, y_train, X_test, y_test):
+  print("Prediction using Elastic Regression is being made...")
+  elastic_model = ElasticNet().fit(X_train, y_train)
+  elastic_model_results = elastic_model.predict(X_test)
+
+  elastic_train_results = pd.DataFrame(data={'Timestamp':dates_test, 'Predicted Values':elastic_model_results, 'Real Values':y_test})
+
+  return elastic_train_results
+
+def predict_with_CNN(dates_train, dates_test, X_train, y_train, X_test, y_test, epochs_value=100):
+  print("Prediction using Convolutional Neural Networks is being made...")
+  CONV_WIDTH = 3
+  OUT_STEPS = 24
+  num_features = X_train.shape[1]
+
+  cnn_model = Sequential()
+  cnn_model.add(InputLayer((X_train.shape[1], 1)))
+  #cnn_model.add(Conv1D(256, activation='relu', kernel_size=(X_train.shape[1])))
+  #cnn_model.add(Dense(1, kernel_initializer=tf.initializers.zeros()))
+  cnn_model.add(Conv1D(32, (3), activation='relu'))
+  cnn_model.add(Flatten())
+  cnn_model.add(Dense(64, activation='relu'))
+  cnn_model.add(Dense(1))
+
+  #cnn_model.summary()
+
+  cnn_model.compile(loss=MeanSquaredError(), optimizer=Adam(learning_rate=0.0001), metrics=[RootMeanSquaredError()])
+  cnn_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs_value)
+
+  cnn_model_results = cnn_model.predict(X_test).flatten()
+  cnn_train_results = pd.DataFrame(data={'Timestamp':dates_test, 'Predicted Values':cnn_model_results, 'Real Values':y_test})
+
+  return cnn_train_results
+
+def predict_with_GRU(dates_train, dates_test, X_train, y_train, X_test, y_test, epochs_value=100):
+  print("Prediction using GRU is being made...")
+  gru_model = Sequential()
+  gru_model.add(InputLayer((X_train.shape[1], 1)))
+  gru_model.add(GRU(64))
+  gru_model.add(Dense(1))
+
+  gru_model.summary()
+
+  gru_model.compile(loss=MeanSquaredError(), optimizer=Adam(learning_rate=0.0001), metrics=[RootMeanSquaredError()])
+  gru_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs_value)
+
+  gru_model_results = gru_model.predict(X_test).flatten()
+  gru_train_results = pd.DataFrame(data={'Timestamp':dates_test, 'Predicted Values':gru_model_results, 'Real Values':y_test})
+
+  return gru_train_results
+
+def predict_with_RNN(dates_train, dates_test, X_train, y_train, X_test, y_test, epochs_value=100):
+  print("Prediction using Recurrent Neural Network (simple) is being made...")
+  rnn_model = Sequential()
+  rnn_model.add(InputLayer((X_train.shape[1], 1)))
+  rnn_model.add(SimpleRNN(64))
+  #rnn_model.add(Dense(8, 'relu'))
+  #rnn_model.add(Dense(1, 'linear'))
+  rnn_model.add(Dense(1))
+
+  rnn_model.summary()
+
+  rnn_model.compile(loss=MeanSquaredError(), optimizer=Adam(learning_rate=0.0001), metrics=[RootMeanSquaredError()])
+  rnn_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs_value)
+
+  rnn_model_results = rnn_model.predict(X_test).flatten()
+  rnn_train_results = pd.DataFrame(data={'Timestamp':dates_test, 'Predicted Values':rnn_model_results, 'Real Values':y_test})
+
+  return rnn_train_results
 
 # Open data
-raw_historical_data= ("C:/Users/diego/OneDrive/Escritorio/Innova 2030/Datos/Datos_completos/5-final_dataset/historical_data_test.csv")
+raw_historical_data= ("1-Data_Preprocessing/Working_with_historical_data/5-final_dataset/historical_data.csv")
 df_historical_data = pd.read_csv(raw_historical_data)
 
 # Defining timestamp
 df_historical_data['time'] = pd.to_numeric(df_historical_data['time'])
 df_historical_data['time_format'] = (pd.to_datetime(df_historical_data['time'],unit='s', dayfirst=True) .dt.tz_localize('utc').dt.tz_convert('America/Santiago'))
-df_historical_data.index = df_historical_data['time']
+df_historical_data.index = df_historical_data['time_format']
 
 
 # Converting waterMeasured to numerical
@@ -253,13 +354,15 @@ df_historical_data['waterMeasured'] = pd.to_numeric(df_historical_data['waterMea
 # Testing different granularities
 df_historical_data['time_format_granularity'] = df_historical_data['time_format'].dt.floor('Min')
 df_historical_data_granularity = df_historical_data.groupby(['time_format_granularity']).sum().iloc[1:,:]
+df_historical_data_granularity = df_historical_data_granularity.drop(columns=['time'])
+print(df_historical_data_granularity)
 
 # Plotting data
 df_historical_data_granularity.plot(y=["waterMeasured"])
 plt.show()
 
 print(df_historical_data_granularity)
-df_historical_data_granularity = deleting_outliers(df_historical_data_granularity)
+#df_historical_data_granularity = deleting_outliers(df_historical_data_granularity)
 
 # Defining amount of previous data to use to create the supervised problem
 print("Defining window!")
@@ -278,6 +381,8 @@ dates_train, X_train, y_train = dates[:q_64], X[:q_64], y[:q_64]
 dates_val, X_val, y_val = dates[q_64:q_80], X[q_64:q_80], y[q_64:q_80]
 dates_test, X_test, y_test = dates[q_80:], X[q_80:], y[q_80:]
 
+print(X_train.shape)
+
 plt.plot(dates_train, y_train)
 plt.plot(dates_val, y_val)
 plt.plot(dates_test, y_test)
@@ -287,26 +392,46 @@ plt.show()
 
 
 # Predictions
+epoch = 100
+
+#CNN
+cnn_results = predict_with_CNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs_value=epoch)
+
+#RNN
+rnn_results = predict_with_RNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs_value=epoch)
+
+#GRU
+gru_results = predict_with_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs_value=epoch)
+
+# MLP
+mlp_results = predict_with_MLP(dates_train, dates_val, X_train, y_train, X_val, y_val)
+
+# SVR
+svr_results = predict_with_SVR(dates_train, dates_val, X_train, y_train, X_val, y_val)
+
+# MLR
+mlr_results = predict_with_MLR(dates_train, dates_val, X_train, y_train, X_val, y_val)
+
 # Random Forest
-rf_results = predict_with_random_forest(dates_train, dates_test, X_train, y_train, X_test, y_test)
-rf_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
-plt.show()
+rf_results = predict_with_random_forest(dates_train, dates_val, X_train, y_train, X_val, y_val)
 
 # ExtraTrees
-et_results = predict_with_extraTrees(dates_train, dates_test, X_train, y_train, X_test, y_test)
-et_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
-plt.show()
+et_results = predict_with_extraTrees(dates_train, dates_val, X_train, y_train, X_val, y_val)
 
 # kNN
-knn_results = predict_with_kNN(dates_train, dates_test, X_train, y_train, X_test, y_test)
-knn_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
-plt.show()
+knn_results = predict_with_kNN(dates_train, dates_val, X_train, y_train, X_val, y_val)
 
 #LSTM
-lstm_results = predict_with_LSTM(dates_train, dates_test, X_train, y_train, X_test, y_test)
-lstm_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
-plt.show()
+lstm_results = predict_with_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs_value=epoch)
 
+# Ridge
+ridge_results = predict_with_Ridge(dates_train, dates_val, X_train, y_train, X_val, y_val)
+
+# Lasso
+lasso_results = predict_with_Lasso(dates_train, dates_val, X_train, y_train, X_val, y_val)
+
+# Elastic
+elastic_results = predict_with_Elastic(dates_train, dates_val, X_train, y_train, X_val, y_val)
 
 
 # Performance of every model
@@ -314,3 +439,69 @@ get_performance(rf_results['Predicted Values'], rf_results['Real Values'], "Rand
 get_performance(et_results['Predicted Values'], et_results['Real Values'], "ExtraTrees")
 get_performance(lstm_results['Predicted Values'], lstm_results['Real Values'], "LSTM")
 get_performance(knn_results['Predicted Values'], knn_results['Real Values'], "k-NN")
+get_performance(svr_results['Predicted Values'], svr_results['Real Values'], "SVR")
+get_performance(mlr_results['Predicted Values'], mlr_results['Real Values'], "MLR")
+get_performance(mlp_results['Predicted Values'], mlp_results['Real Values'], "MLP")
+get_performance(lasso_results['Predicted Values'], lasso_results['Real Values'], "Lasso")
+get_performance(ridge_results['Predicted Values'], ridge_results['Real Values'], "Ridge")
+get_performance(elastic_results['Predicted Values'], elastic_results['Real Values'], "Elastic")
+get_performance(rnn_results['Predicted Values'], rnn_results['Real Values'], "RNN")
+get_performance(gru_results['Predicted Values'], gru_results['Real Values'], "GRU")
+get_performance(cnn_results['Predicted Values'], gru_results['Real Values'], "CNN")
+
+
+# Plotting results
+rf_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('Random Forest results')
+plt.show()
+
+et_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('ExtraTrees results')
+plt.show()
+
+lstm_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('LSTM results')
+plt.show()
+
+knn_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('k-Nearest Neighbors results')
+plt.show()
+
+svr_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('Support Vector Regression results')
+plt.show()
+
+mlr_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('Multi-Linear Regression results')
+plt.show()
+
+mlp_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('Multi-layer Perceptron results')
+plt.show()
+
+lasso_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('Lasso Regression results')
+plt.show()
+
+ridge_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('Ridge Regression results')
+plt.show()
+
+elastic_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('Elastic Regression results')
+plt.show()
+
+rnn_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('Recurrent Neural Network results')
+plt.show()
+
+gru_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('Gated Recurrent Unit results')
+plt.show()
+
+cnn_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('Convolutional Neural Network results')
+plt.show()
+
+
+
