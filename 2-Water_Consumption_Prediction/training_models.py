@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.dates import MonthLocator, DateFormatter
 
 
 from statsmodels.tsa.stattools import adfuller
@@ -75,7 +76,7 @@ def deleting_outliers(df):
 
     # Deleting outliers
     df['waterMeasured'] = np.where(df['waterMeasured'] > upper, None, df['waterMeasured'])
-    df['waterMeasured'] = np.where(df['waterMeasured'] < lower, None, df['waterMeasured'])
+    df['waterMeasured'] = np.where(df['waterMeasured'] < lower, 0, df['waterMeasured'])
 
     # applying the method
     count_nan = df['waterMeasured'].isnull().sum()
@@ -155,6 +156,7 @@ def df_to_windowed_df(dataframe, n=3, every_x_minute=1):
 
   return ret_df
 
+
 def windowed_df_to_date_X_y(windowed_dataframe):
   df_as_np = windowed_dataframe.to_numpy()
 
@@ -166,6 +168,7 @@ def windowed_df_to_date_X_y(windowed_dataframe):
   Y = df_as_np[:, -1]
 
   return dates, X.astype(np.float32), Y.astype(np.float32)
+
 
 def get_performance(predicted_values, real_values, model_name):
   rmse = sklearn.metrics.mean_squared_error(real_values, predicted_values,squared=True)
@@ -353,16 +356,30 @@ df_historical_data['waterMeasured'] = pd.to_numeric(df_historical_data['waterMea
 
 # Testing different granularities
 df_historical_data['time_format_granularity'] = df_historical_data['time_format'].dt.floor('Min')
-df_historical_data_granularity = df_historical_data.groupby(['time_format_granularity']).sum().iloc[1:,:]
+df_historical_data_granularity = df_historical_data.groupby(['time_format_granularity']).mean().iloc[1:,:]
 df_historical_data_granularity = df_historical_data_granularity.drop(columns=['time'])
 print(df_historical_data_granularity)
 
 # Plotting data
 df_historical_data_granularity.plot(y=["waterMeasured"])
+plt.title("Water consumption per minute from 01-07-2023 to 01-09-2023")
+
+months = MonthLocator()
+months_fmt = DateFormatter('%B')
+plt.gca().xaxis.set_major_locator(months)
+plt.gca().xaxis.set_major_formatter(months_fmt)
+plt.xticks(rotation=0) 
 plt.show()
+
+
+#df_historical_data_granularity['waterMeasured'] = (df_historical_data_granularity['waterMeasured'] - df_historical_data_granularity['waterMeasured'].min()) / (df_historical_data_granularity['waterMeasured'].max() - df_historical_data_granularity['waterMeasured'].min())
+
+
+#stationarity_test(df_historical_data_granularity)
 
 print(df_historical_data_granularity)
 #df_historical_data_granularity = deleting_outliers(df_historical_data_granularity)
+
 
 # Defining amount of previous data to use to create the supervised problem
 print("Defining window!")
@@ -381,12 +398,22 @@ dates_train, X_train, y_train = dates[:q_64], X[:q_64], y[:q_64]
 dates_val, X_val, y_val = dates[q_64:q_80], X[q_64:q_80], y[q_64:q_80]
 dates_test, X_test, y_test = dates[q_80:], X[q_80:], y[q_80:]
 
-print(X_train.shape)
+dates_train = np.array(dates_train, dtype='datetime64')
+dates_val = np.array(dates_val, dtype='datetime64')
+dates_test = np.array(dates_test, dtype='datetime64')
+
+print("enetrenará con:")
+print(X_train)
+print(y_train)
 
 plt.plot(dates_train, y_train)
 plt.plot(dates_val, y_val)
 plt.plot(dates_test, y_test)
 
+months = MonthLocator()
+months_fmt = DateFormatter('%B')
+plt.gca().xaxis.set_major_locator(months)
+plt.gca().xaxis.set_major_formatter(months_fmt)
 plt.legend(['Train', 'Validation', 'Test'])
 plt.show()
 
