@@ -334,7 +334,7 @@ def predict_with_RNN(dates_train, dates_test, X_train, y_train, X_test, y_test, 
   rnn_model.summary()
 
   rnn_model.compile(loss=MeanSquaredError(), optimizer=Adam(learning_rate=0.0001), metrics=[RootMeanSquaredError()])
-  rnn_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs_value)
+  rnn_model.fit(X_train, y_trainl), epochs=epochs_value)
 
   rnn_model_results = rnn_model.predict(X_test).flatten()
   rnn_train_results = pd.DataFrame(data={'Timestamp':dates_test, 'Predicted Values':rnn_model_results, 'Real Values':y_test})
