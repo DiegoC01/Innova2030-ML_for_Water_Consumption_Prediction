@@ -25,8 +25,6 @@ new_data = new_data[~new_data['time'].isin(existing_timestamps)]
 # Concatenar los datos originales con los nuevos datos
 merged_data = pd.concat([data, new_data], ignore_index=True)
 
-
-
 merged_data = merged_data.sort_values(by='waterMeasured', ascending=False)
 merged_data = merged_data.drop_duplicates(subset='time', keep='first')
 
