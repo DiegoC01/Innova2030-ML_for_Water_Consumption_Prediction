@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-from statsmodels.tsa.stattools import adfuller
+#from statsmodels.tsa.stattools import adfuller
 from datetime import datetime, timedelta
 
 import sklearn
@@ -13,13 +13,12 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.svm import SVR
+from sklearn.multioutput import MultiOutputRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.neural_network import MLPRegressor
 from sklearn.linear_model import Lasso
 from sklearn.linear_model import Ridge
 from sklearn.linear_model import ElasticNet
-
-from scipy.stats import kstest
 
 
 import tensorflow as tf
@@ -34,24 +33,6 @@ from keras.metrics import RootMeanSquaredError, F1Score, R2Score
 from keras.optimizers import *
 
 # Defining helper functions
-
-def pruebaKolmogorovSmirnov(df):
-  # Realizar el test de Kolmogorov-Smirnov
-  resultado_ks, p_valor = kstest(df["waterMeasured"], 'norm')
-
-  # Imprimir los resultados
-  print("Estadística de prueba KS:", resultado_ks)
-  print("Valor p:", p_valor)
-
-  # Interpretar el resultado
-  nivel_de_significancia = 0.05
-  if p_valor > nivel_de_significancia:
-      print("Los datos siguen una distribución normal.")
-  else:
-      print("Los datos no siguen una distribución normal.")
-
-  return None
-
 
 def iqr(df, minimum_value_allowed = 0):
     # IQR
@@ -92,7 +73,6 @@ def deleting_outliers(df):
     
     # printing the number of values present
     # in the column
-    print('Number of NaN values present: ' + str(count_nan))
 
     return df
 
@@ -110,21 +90,23 @@ def supervised_problem(df, previous_examples=2, future_predictions=4):
    last_date = dates[-1]
    waterMeasured = np.array(df['waterMeasured'].values)
 
-   X = np.lib.stride_tricks.sliding_window_view(waterMeasured[1:], (previous_examples,))
-   Y = np.lib.stride_tricks.sliding_window_view(waterMeasured[:len(waterMeasured) - 1], (future_predictions,))
-   dates_targets = np.lib.stride_tricks.sliding_window_view(dates, (future_predictions,))
+   X = np.lib.stride_tricks.sliding_window_view(waterMeasured[:len(waterMeasured) - previous_examples], (previous_examples,))
+   Y = np.lib.stride_tricks.sliding_window_view(waterMeasured[previous_examples:], (future_predictions,))
+   dates_targets = np.lib.stride_tricks.sliding_window_view(dates[previous_examples:], (future_predictions,))
 
    return dates_targets, X, Y
 
 def get_performance(predicted_values, real_values, model_name):
-  rmse = sklearn.metrics.mean_squared_error(real_values, predicted_values,squared=True)
+  rmse = sklearn.metrics.mean_squared_error(real_values, predicted_values,squared=False)
   mae = sklearn.metrics.mean_absolute_error(real_values, predicted_values)
-  r2 = sklearn.metrics.r2_score(real_values, predicted_values)
+  mse = sklearn.metrics.mean_squared_error(real_values, predicted_values)
+  r2 = sklearn.metrics.r2_score(real_values, predicted_values, multioutput='variance_weighted')
 
   print("\tMetrics of "+str(model_name))
   print("RMSE: "+str(rmse))
   print("MAE: "+str(mae))
-  print("Coefficient of determination: "+str(r2))
+  print("MSE: "+str(mse))
+  print("R^2: "+str(r2))
   print()
 
 
@@ -139,7 +121,8 @@ def predict_with_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val, ep
 
   # Model creation
   lstm_model = Sequential([
-    LSTM(100, input_shape=(number_of_inputs, 1)),
+    LSTM(32, input_shape=(number_of_inputs, 1), dropout=0.1, recurrent_dropout=0.5, return_sequences=True),
+    LSTM(64, activation='relu', dropout=0.1, recurrent_dropout=0.5),
     #LSTM(100, activation='relu'),
     Dense(number_of_outputs)
     ]
@@ -151,14 +134,14 @@ def predict_with_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val, ep
 
  # Early Stopping Callback
   early_stopping_monitor = EarlyStopping(
-    monitor='root_mean_squared_error',
+    monitor='val_root_mean_squared_error',
     patience=25,         
     verbose=1,           
     restore_best_weights=True 
   )
 
   # Training model
-  lstm_model.compile(loss=MeanSquaredError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
+  lstm_model.compile(loss=MeanAbsoluteError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
   #lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs)
   fit_model = lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs, callbacks=[early_stopping_monitor])
 
@@ -171,7 +154,9 @@ def predict_with_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val, ep
   #plt.show()
 
   # Predicting and saving results
+
   lstm_model_results = lstm_model.predict(X_val)
+
   print(lstm_model_results.shape)
   print(y_val.shape)
   lstm_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':lstm_model_results[0], 'Real Values':y_val[0]})
@@ -187,8 +172,8 @@ def predict_with_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val, epo
 
   # Model creation
   lstm_model = Sequential([
-    GRU(100, input_shape=(number_of_inputs, 1)),
-    #GRU(64, activation='relu'),
+    GRU(32, input_shape=(number_of_inputs, 1), dropout=0.1, recurrent_dropout=0.5, return_sequences=True),
+    GRU(64, activation='relu', dropout=0.1, recurrent_dropout=0.5),
     Dense(number_of_outputs)
     ]
   )
@@ -198,14 +183,14 @@ def predict_with_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val, epo
 
  # Early Stopping Callback
   early_stopping_monitor = EarlyStopping(
-    monitor='root_mean_squared_error',
+    monitor='val_root_mean_squared_error',
     patience=25,         
     verbose=1,           
     restore_best_weights=True 
   )
 
   # Training model
-  lstm_model.compile(loss=MeanSquaredError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
+  lstm_model.compile(loss=MeanAbsoluteError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
   #lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs)
   fit_model = lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs, callbacks=[early_stopping_monitor])
 
@@ -218,9 +203,13 @@ def predict_with_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val, epo
   #plt.show()
 
   # Predicting and saving results
+
   lstm_model_results = lstm_model.predict(X_val)
+
   print(lstm_model_results.shape)
   print(y_val.shape)
+  print("Predicho: "+str(np.sum((lstm_model_results[0])[lstm_model_results[0] > 0])))
+  print("Real: "+str(np.sum((y_val[0])[y_val[0] > 0])))
   lstm_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':lstm_model_results[0], 'Real Values':y_val[0]})
 
   return (lstm_train_results, lstm_model_results, y_val)
@@ -234,7 +223,8 @@ def predict_with_RNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epo
 
   # Model creation
   lstm_model = Sequential([
-    SimpleRNN(100, input_shape=(number_of_inputs, 1)),
+    SimpleRNN(32, input_shape=(number_of_inputs, 1), dropout=0.1, recurrent_dropout=0.5, return_sequences=True),
+    SimpleRNN(64, activation='relu', dropout=0.1, recurrent_dropout=0.5),
     #SimpleRNN(32, activation='relu'),
     Dense(number_of_outputs)
     ]
@@ -245,14 +235,14 @@ def predict_with_RNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epo
 
  # Early Stopping Callback
   early_stopping_monitor = EarlyStopping(
-    monitor='root_mean_squared_error',
+    monitor='val_root_mean_squared_error',
     patience=25,         
     verbose=1,           
     restore_best_weights=True 
   )
 
   # Training model
-  lstm_model.compile(loss=MeanSquaredError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
+  lstm_model.compile(loss=MeanAbsoluteError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
   #lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs)
   fit_model = lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs, callbacks=[early_stopping_monitor])
 
@@ -265,7 +255,9 @@ def predict_with_RNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epo
   #plt.show()
 
   # Predicting and saving results
+
   lstm_model_results = lstm_model.predict(X_val)
+
   print(lstm_model_results.shape)
   print(y_val.shape)
   lstm_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':lstm_model_results[0], 'Real Values':y_val[0]})
@@ -279,7 +271,7 @@ def predict_with_CNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epo
 
   # Model creation
   lstm_model = Sequential([
-    Conv1D(500, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, 1)),
+    Conv1D(32, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, 1)),
     Flatten(),
     Dense(number_of_outputs)]
   )
@@ -289,21 +281,32 @@ def predict_with_CNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epo
 
    # Early Stopping Callback
   early_stopping_monitor = EarlyStopping(
-    monitor='root_mean_squared_error',
+    monitor='val_root_mean_squared_error',
     patience=25,         
     verbose=1,           
     restore_best_weights=True 
   )
 
   # Training model
-  lstm_model.compile(loss=MeanSquaredError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
+  lstm_model.compile(loss=MeanAbsoluteError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
   #lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs)
-  lstm_model.fit(X_train, y_train, epochs=epochs, callbacks=[early_stopping_monitor])
+  lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs, callbacks=[early_stopping_monitor])
+  loss, accuracy = lstm_model.evaluate(X_test, y_test)
+  # Imprimir las métricas
+  print("Loss:", loss)
+  print("Accuracy:", accuracy)
+
+
+
 
   # Predicting and saving results
+
   lstm_model_results = lstm_model.predict(X_val)
+
   print(lstm_model_results.shape)
   print(y_val.shape)
+  print("Predicho: "+str(np.sum((lstm_model_results[0])[lstm_model_results[0] > 0])))
+  print("Real: "+str(np.sum((y_val[0])[y_val[0] > 0])))
   lstm_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':lstm_model_results[0], 'Real Values':y_val[0]})
 
   return (lstm_train_results, lstm_model_results, y_val)
@@ -319,7 +322,7 @@ def predict_with_CNN_SimpleRNN(dates_train, dates_val, X_train, y_train, X_val, 
 
   # Model creation
   lstm_model = Sequential([
-    Conv1D(500, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, 1)),
+    Conv1D(32, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, 1)),
     #Flatten(),
     SimpleRNN(32),
     Dense(number_of_outputs)]
@@ -330,21 +333,30 @@ def predict_with_CNN_SimpleRNN(dates_train, dates_val, X_train, y_train, X_val, 
 
    # Early Stopping Callback
   early_stopping_monitor = EarlyStopping(
-    monitor='root_mean_squared_error',
+    monitor='val_root_mean_squared_error',
     patience=25,         
     verbose=1,           
     restore_best_weights=True 
   )
 
   # Training model
-  lstm_model.compile(loss=MeanSquaredError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
+  lstm_model.compile(loss=MeanAbsoluteError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
   #lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs)
-  lstm_model.fit(X_train, y_train, epochs=epochs, callbacks=[early_stopping_monitor])
+  lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs, callbacks=[early_stopping_monitor])
+  loss, accuracy = lstm_model.evaluate(X_test, y_test)
+  # Imprimir las métricas
+  print("Loss:", loss)
+  print("Accuracy:", accuracy)
+
+
+
 
   # Predicting and saving results
+
   lstm_model_results = lstm_model.predict(X_val)
-  print(lstm_model_results.shape)
-  print(y_val.shape)
+
+  print("Predicho: "+str(np.sum((lstm_model_results[0])[lstm_model_results[0] > 0])))
+  print("Real: "+str(np.sum((y_val[0])[y_val[0] > 0])))
   lstm_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':lstm_model_results[0], 'Real Values':y_val[0]})
 
   return (lstm_train_results, lstm_model_results, y_val)
@@ -358,7 +370,7 @@ def predict_with_CNN_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val
 
   # Model creation
   lstm_model = Sequential([
-    Conv1D(500, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, 1)),
+    Conv1D(32, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, 1)),
     #Flatten(),
     LSTM(32),
     Dense(number_of_outputs)]
@@ -369,21 +381,31 @@ def predict_with_CNN_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val
 
    # Early Stopping Callback
   early_stopping_monitor = EarlyStopping(
-    monitor='root_mean_squared_error',
+    monitor='val_root_mean_squared_error',
     patience=25,         
     verbose=1,           
     restore_best_weights=True 
   )
 
   # Training model
-  lstm_model.compile(loss=MeanSquaredError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
+  lstm_model.compile(loss=MeanAbsoluteError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
   #lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs)
-  lstm_model.fit(X_train, y_train, epochs=epochs, callbacks=[early_stopping_monitor])
+  lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs, callbacks=[early_stopping_monitor])
+  loss, accuracy = lstm_model.evaluate(X_test, y_test)
+  # Imprimir las métricas
+  print("Loss:", loss)
+  print("Accuracy:", accuracy)
+
+
 
   # Predicting and saving results
+
   lstm_model_results = lstm_model.predict(X_val)
+
   print(lstm_model_results.shape)
   print(y_val.shape)
+  print("Predicho: "+str(np.sum((lstm_model_results[0])[lstm_model_results[0] > 0])))
+  print("Real: "+str(np.sum((y_val[0])[y_val[0] > 0])))
   lstm_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':lstm_model_results[0], 'Real Values':y_val[0]})
 
   return (lstm_train_results, lstm_model_results, y_val)
@@ -397,7 +419,7 @@ def predict_with_CNN_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val,
 
   # Model creation
   lstm_model = Sequential([
-    Conv1D(500, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, 1)),
+    Conv1D(32, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, 1)),
     #Flatten(),
     GRU(32),
     Dense(number_of_outputs)]
@@ -408,30 +430,41 @@ def predict_with_CNN_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val,
 
    # Early Stopping Callback
   early_stopping_monitor = EarlyStopping(
-    monitor='root_mean_squared_error',
+    monitor='val_root_mean_squared_error',
     patience=25,         
     verbose=1,           
     restore_best_weights=True 
   )
 
   # Training model
-  lstm_model.compile(loss=MeanSquaredError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
+  lstm_model.compile(loss=MeanAbsoluteError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
   #lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs)
-  lstm_model.fit(X_train, y_train, epochs=epochs, callbacks=[early_stopping_monitor])
+  lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs, callbacks=[early_stopping_monitor])
+  loss, accuracy = lstm_model.evaluate(X_test, y_test)
+  # Imprimir las métricas
+  print("Loss:", loss)
+  print("Accuracy:", accuracy)
+
+
 
   # Predicting and saving results
+
   lstm_model_results = lstm_model.predict(X_val)
+
   print(lstm_model_results.shape)
   print(y_val.shape)
+  print("Predicho: "+str(np.sum((lstm_model_results[0])[lstm_model_results[0] > 0])))
+  print("Real: "+str(np.sum((y_val[0])[y_val[0] > 0])))
   lstm_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':lstm_model_results[0], 'Real Values':y_val[0]})
 
   return (lstm_train_results, lstm_model_results, y_val)
 ###################################################
 ###################################################
 
-def predict_with_MLP(dates_train, dates_val, X_train, y_train, X_val, y_val):
+def predict_with_MLP(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=100):
   print("Prediction using MLP is being made...")
-  mlp_model = MLPRegressor(solver='lbfgs', early_stopping=True).fit(X_train, y_train)
+  mlp_model = MLPRegressor(solver='lbfgs', early_stopping=True, max_iter=10000).fit(X_train, y_train)
+
   mlp_model_results = mlp_model.predict(X_val)
 
   mlr_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':mlp_model_results[0], 'Real Values':y_val[0]})
@@ -442,6 +475,7 @@ def predict_with_random_forest(dates_train, dates_val, X_train, y_train, X_val, 
   print("Prediction using Random Forest is being made...")
 
   rf_model = RandomForestRegressor().fit(X_train, y_train)
+
   rf_model_results = rf_model.predict(X_val)
 
   rf_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':rf_model_results[0], 'Real Values':y_val[0]})
@@ -450,8 +484,9 @@ def predict_with_random_forest(dates_train, dates_val, X_train, y_train, X_val, 
 
 def predict_with_SVR(dates_train, dates_val, X_train, y_train, X_val, y_val):
   print("Prediction using SVR is being made...")
-  svr_model = SVR(kernel="rbf", C=100, gamma=0.1, epsilon=0.1).fit(X_train, y_train)
-  svr_model_results = svr_model.predict(X_val)
+  svr_model = SVR(kernel="rbf", C=100, gamma=0.1, epsilon=0.1)
+  multioutput_regressor = MultiOutputRegressor(svr_model).fit(X_train, y_train)
+  svr_model_results = multioutput_regressor.predict(X_val)
 
   svr_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':svr_model_results[0], 'Real Values':y_val[0]})
 
@@ -460,6 +495,7 @@ def predict_with_SVR(dates_train, dates_val, X_train, y_train, X_val, y_val):
 def predict_with_MLR(dates_train, dates_val, X_train, y_train, X_val, y_val):
   print("Prediction using MLR is being made...")
   mlr_model = LinearRegression().fit(X_train, y_train)
+
   mlr_model_results = mlr_model.predict(X_val)
 
   mlr_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':mlr_model_results[0], 'Real Values':y_val[0]})
@@ -478,6 +514,7 @@ def predict_with_Lasso(dates_train, dates_val, X_train, y_train, X_val, y_val):
 def predict_with_Ridge(dates_train, dates_val, X_train, y_train, X_val, y_val):
   print("Prediction using Ridge Regression is being made...")
   ridge_model = Ridge().fit(X_train, y_train)
+
   ridge_model_results = ridge_model.predict(X_val)
 
   ridge_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':ridge_model_results[0], 'Real Values':y_val[0]})
@@ -487,6 +524,7 @@ def predict_with_Ridge(dates_train, dates_val, X_train, y_train, X_val, y_val):
 def predict_with_Elastic(dates_train, dates_val, X_train, y_train, X_val, y_val):
   print("Prediction using Elastic Regression is being made...")
   elastic_model = ElasticNet().fit(X_train, y_train)
+
   elastic_model_results = elastic_model.predict(X_val)
 
   elastic_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':elastic_model_results[0], 'Real Values':y_val[0]})
@@ -518,7 +556,7 @@ def predict_with_kNN(dates_train, dates_val, X_train, y_train, X_val, y_val):
 
 
 # Open data
-raw_historical_data= ("https://raw.githubusercontent.com/DiegoC01/Innova2030-ML_for_Water_Consumption_Prediction/main/1-Data_Preprocessing/Working_with_historical_data/5-final_dataset/historical_data.csv")
+raw_historical_data= ("https://media.githubusercontent.com/media/DiegoC01/Innova2030-ML_for_Water_Consumption_Prediction/main/1-Data_Preprocessing/Working_with_historical_data/5-final_dataset/historical_data_v2.csv")
 df_historical_data = pd.read_csv(raw_historical_data)
 
 # Defining timestamp
@@ -531,36 +569,33 @@ df_historical_data.index = df_historical_data['time_format']
 df_historical_data['waterMeasured'] = pd.to_numeric(df_historical_data['waterMeasured'])
 
 # Testing different granularities
-df_historical_data['time_format_granularity'] = df_historical_data['time_format'].dt.floor('60Min')
+df_historical_data['time_format_granularity'] = df_historical_data['time_format'].dt.floor('Min')
 df_historical_data_granularity = df_historical_data.groupby(['time_format_granularity']).mean().iloc[1:,:]
 df_historical_data_granularity = df_historical_data_granularity.drop(columns=['time'])
 #print(df_historical_data_granularity)
 
 # Converting to 15 minutes
-df_historical_data_granularity['hour'] = df_historical_data_granularity.index.floor('60Min')
+df_historical_data_granularity['hour'] = df_historical_data_granularity.index.floor('5Min')
 df_historical_data = df_historical_data_granularity.groupby(['hour']).sum().iloc[1:,:]
 #print(df_historical_data)
 
-df_historical_data = deleting_outliers(df_historical_data)
-
-# Plotting data
-df_historical_data.plot(y=["waterMeasured"])
-plt.title("Historical water consumption")
-plt.show()
-
-#pruebaKolmogorovSmirnov(df_historical_data)
-
-# Normalize
-#df_historical_data['waterMeasured'] = MinMaxScaler().fit_transform(df_historical_data[['waterMeasured']])
-#df_historical_data['waterMeasured'] = (df_historical_data['waterMeasured'] - df_historical_data['waterMeasured'].min()) / (df_historical_data['waterMeasured'].max() - df_historical_data['waterMeasured'].min())
-#print()
-#pruebaKolmogorovSmirnov(df_historical_data)
-
+#df_historical_data = deleting_outliers(df_historical_data)
 
 # Plotting data
 #df_historical_data.plot(y=["waterMeasured"])
 #plt.title("Historical water consumption")
 #plt.show()
+
+# Normalize
+#scaler = RobustScaler()
+#df_historical_data = pd.DataFrame(scaler.fit_transform(df_historical_data), columns=['waterMeasured'])
+#df_historical_data['waterMeasured'] = scaler.fit_transform(df_historical_data['waterMeasured'])
+#df_historical_data['waterMeasured'] = (df_historical_data['waterMeasured'] - df_historical_data['waterMeasured'].min()) / (df_historical_data['waterMeasured'].max() - df_historical_data['waterMeasured'].min())
+
+# Plotting data
+df_historical_data.plot(y=["waterMeasured"])
+plt.title("Historical water consumption")
+plt.show()
 
 
 # Showing data sample
@@ -568,8 +603,8 @@ print(df_historical_data)
 
 
 # Defining amount of previous data to use to create the supervised problem
-PREVIOUS_DATA = 360
-FUTURE_DATA = 360
+PREVIOUS_DATA = 288
+FUTURE_DATA = 288
 
 # Creating data sets for analysis of ML techniques
 
@@ -586,6 +621,8 @@ dates_test, X_test, y_test = dates[q_80:], X[q_80:], y[q_80:]
 # Sample 
 print(X_train)
 print(y_train)
+print(X_train.shape)
+print(y_train.shape)
 
 # Plotting subsets
 #plt.plot(y_train)
@@ -599,13 +636,14 @@ print(y_train)
 #################################################
 
 # Defining epochs to be used in neural networks
-epochs = 100000
+epochs = 10000
 
 
 # Getting results from every model
 
 #CNN
 (cnn_results, pred_val_cnn, real_val_cnn) = predict_with_CNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
+
 
 #CNN-RNN
 (cnn_rnn_results, pred_val_cnn_rnn, real_val_cnn_rnn) = predict_with_CNN_SimpleRNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
@@ -625,26 +663,15 @@ epochs = 100000
 #GRU
 (gru_results, pred_val_gru, real_val_gru) = predict_with_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
 
-# MLP
-(mlp_results, pred_val_mlp, real_val_mlp) = predict_with_MLP(dates_train, dates_val, X_train, y_train, X_val, y_val)
+#LSTM
+(lstm_results, pred_val_lstm, real_val_lstm) = predict_with_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
 
-# SVR
-#(svr_results, pred_val_svr, real_val_svr) = predict_with_SVR(dates_train, dates_val, X_train, y_train, X_val, y_val)
+
+# MLP
+(mlp_results, pred_val_mlp, real_val_mlp) = predict_with_MLP(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
 
 # MLR
 (mlr_results, pred_val_mlr, real_val_mlr) = predict_with_MLR(dates_train, dates_val, X_train, y_train, X_val, y_val)
-
-# Random Forest
-(rf_results, pred_val_rf, real_val_rf) = predict_with_random_forest(dates_train, dates_val, X_train, y_train, X_val, y_val)
-
-# ExtraTrees
-(et_results, pred_val_et, real_val_et) = predict_with_extraTrees(dates_train, dates_val, X_train, y_train, X_val, y_val)
-
-# kNN
-(knn_results, pred_val_knn, real_val_knn) = predict_with_kNN(dates_train, dates_val, X_train, y_train, X_val, y_val)
-
-#LSTM
-(lstm_results, pred_val_lstm, real_val_lstm) = predict_with_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
 
 # Ridge
 (ridge_results, pred_val_ridge, real_val_ridge) = predict_with_Ridge(dates_train, dates_val, X_train, y_train, X_val, y_val)
@@ -656,20 +683,46 @@ epochs = 100000
 (elastic_results, pred_val_elastic, real_val_elastic) = predict_with_Elastic(dates_train, dates_val, X_train, y_train, X_val, y_val)
 
 
+# SVR
+(svr_results, pred_val_svr, real_val_svr) = predict_with_SVR(dates_train, dates_val, X_train, y_train, X_val, y_val)
+
+
+
+# Random Forest
+(rf_results, pred_val_rf, real_val_rf) = predict_with_random_forest(dates_train, dates_val, X_train, y_train, X_val, y_val)
+
+# ExtraTrees
+(et_results, pred_val_et, real_val_et) = predict_with_extraTrees(dates_train, dates_val, X_train, y_train, X_val, y_val)
+
+# kNN
+(knn_results, pred_val_knn, real_val_knn) = predict_with_kNN(dates_train, dates_val, X_train, y_train, X_val, y_val)
+
+
+
+
+
+
 # Performance of every model
+
 get_performance(pred_val_rf, real_val_rf, "Random Forest")
 get_performance(pred_val_et, real_val_et, "ExtraTrees")
 get_performance(pred_val_knn, real_val_knn, "k-NN")
-#get_performance(pred_val_svr, real_val_svr, "SVR")
+
+get_performance(pred_val_svr, real_val_svr, "SVR")
+
 get_performance(pred_val_mlr, real_val_mlr, "MLR")
 get_performance(pred_val_mlp, real_val_mlp, "MLP")
+
 get_performance(pred_val_lasso, real_val_lasso, "Lasso")
 get_performance(pred_val_ridge, real_val_ridge, "Ridge")
 get_performance(pred_val_elastic, real_val_elastic, "Elastic")
+
 get_performance(pred_val_rnn, real_val_rnn, "RNN")
 get_performance(pred_val_gru, real_val_gru, "GRU")
 get_performance(pred_val_lstm, real_val_lstm, "LSTM")
+
 get_performance(pred_val_cnn, real_val_cnn, "CNN")
+
 get_performance(pred_val_cnn_rnn, real_val_cnn_rnn, "CNN-RNN")
 get_performance(pred_val_cnn_gru, real_val_cnn_gru, "CNN-GRU")
 get_performance(pred_val_cnn_lstm, real_val_cnn_lstm, "CNN-LSTM")
@@ -678,8 +731,9 @@ get_performance(pred_val_cnn_lstm, real_val_cnn_lstm, "CNN-LSTM")
 # Plotting
 
 #cnn_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
-#plt.title('CNN results')
-#plt.show()
+cnn_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
+plt.title('CNN results')
+plt.show()
 
 #lstm_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
 #plt.title('LSTM results')
