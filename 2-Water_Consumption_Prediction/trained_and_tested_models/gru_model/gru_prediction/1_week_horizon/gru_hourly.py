@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-
+from dateutil import tz
 
 
 #from statsmodels.tsa.stattools import adfuller
@@ -125,7 +125,8 @@ df_historical_data = pd.read_csv(raw_historical_data)
 
 # Defining timestamp
 df_historical_data['time'] = pd.to_numeric(df_historical_data['time'])
-df_historical_data['time_format'] = (pd.to_datetime(df_historical_data['time'],unit='s', dayfirst=True) .dt.tz_localize('utc').dt.tz_convert('America/Santiago'))
+df_historical_data['time_format'] = pd.to_datetime(df_historical_data['time'], unit='s', dayfirst=True)
+df_historical_data['time_format'] = df_historical_data['time_format'].dt.tz_localize('utc').dt.tz_convert('America/Santiago')
 df_historical_data.index = df_historical_data['time_format']
 
 
@@ -136,11 +137,10 @@ df_historical_data['waterMeasured'] = pd.to_numeric(df_historical_data['waterMea
 df_historical_data['time_format_granularity'] = df_historical_data['time_format'].dt.floor('Min')
 df_historical_data_granularity = df_historical_data.groupby(['time_format_granularity']).mean().iloc[1:,:]
 df_historical_data_granularity = df_historical_data_granularity.drop(columns=['time'])
-#print(df_historical_data_granularity)
+print(df_historical_data_granularity)
 
-# Converting to 15 minutes
 df_historical_data_granularity['hour'] = df_historical_data_granularity.index.floor('60Min')
-df_historical_data = df_historical_data_granularity.groupby(['hour']).sum().iloc[1:,:]
+df_historical_data_v2 = df_historical_data_granularity.groupby(['hour']).sum().iloc[1:,:]
 
 
 # Plotting data
@@ -149,22 +149,24 @@ df_historical_data = df_historical_data_granularity.groupby(['hour']).sum().iloc
 #plt.show()
 
 # Plotting data
-df_historical_data.plot(y=["waterMeasured"])
-plt.title("Historical water consumption")
-plt.show()
+#df_historical_data.plot(y=["waterMeasured"])
+#plt.title("Historical water consumption")
+#plt.show()
 
 
 # Showing data sample
-print(df_historical_data)
+print(df_historical_data_v2)
 
 
 # Defining amount of previous data to use to create the supervised problem
-PREVIOUS_DATA = 168
-FUTURE_DATA = 168
+PREVIOUS_DATA = 24
+FUTURE_DATA = 24
 
 # Creating data sets for analysis of ML techniques
 
-dates, X, y = supervised_problem(df_historical_data, previous_examples=PREVIOUS_DATA, future_predictions=FUTURE_DATA)
+dates, X, y = supervised_problem(df_historical_data_v2, previous_examples=PREVIOUS_DATA, future_predictions=FUTURE_DATA)
+
+print(dates)
 
 # Dividing data
 q_64 = int(len(dates) * .64)
@@ -180,7 +182,7 @@ dates_test, X_test, y_test = dates[q_80:], X[q_80:], y[q_80:]
 # PREDICTIONS
 #################################################
 
-loaded_model = tf.keras.saving.load_model("gru_model/gru_training/1_week_horizon/models/gru_hourly_1_week_horizon.h5")
+loaded_model = tf.keras.saving.load_model("C:/Users/diego/OneDrive/Escritorio/Innova 2030/GitHub_Repositories/Innova2030-ML_for_Water_Consumption_Prediction/2-Water_Consumption_Prediction/trained_and_tested_models/gru_model/gru_training/1_week_horizon/models/gru_hourly_1_day_horizon.h5")
 prediction = loaded_model.predict(X_test)
 
 print("VALORES POR SEMANA")
@@ -191,7 +193,7 @@ plt.plot(dates_test[-1], y_test[-1], color='red', marker='o', label='Valores Rea
 plt.plot(dates_test[-1], prediction[-1], color='blue', marker='o', label='Predicciones')
 
 # Configurar el formato de las fechas en el eje x
-plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M', tz = tz.gettz('America/Santiago')))
 plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=1))
 
 # Rotar las fechas para que sean legibles

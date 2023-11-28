@@ -32,6 +32,8 @@ from keras.losses import *
 from keras.metrics import RootMeanSquaredError, F1Score, R2Score
 from keras.optimizers import *
 
+
+
 # Defining helper functions
 
 def iqr(df, minimum_value_allowed = 0):
@@ -88,13 +90,10 @@ def stationarity_test(df):
 def supervised_problem(df, previous_examples=2, future_predictions=4):
    dates = np.array(df.index)
    last_date = dates[-1]
-   waterMeasuredX = np.array(df[['hour', 'waterMeasured']].values)
-   waterMeasuredY = np.array(df['waterMeasured'].values)
-   print(waterMeasuredX)
-   print(waterMeasuredY)
+   waterMeasured = np.array(df['waterMeasured'].values)
 
-   X = np.lib.stride_tricks.sliding_window_view(waterMeasuredX[:len(waterMeasuredY) - previous_examples], (previous_examples,2))
-   Y = np.lib.stride_tricks.sliding_window_view(waterMeasuredY[previous_examples:], (future_predictions,))
+   X = np.lib.stride_tricks.sliding_window_view(waterMeasured[:len(waterMeasured) - previous_examples], (previous_examples,))
+   Y = np.lib.stride_tricks.sliding_window_view(waterMeasured[previous_examples:], (future_predictions,))
    dates_targets = np.lib.stride_tricks.sliding_window_view(dates[previous_examples:], (future_predictions,))
 
    return dates_targets, X, Y
@@ -115,6 +114,7 @@ def get_performance(predicted_values, real_values, model_name):
 
 # Defining models
 
+
 def predict_with_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=100):
   # Message of indentification
   print("Prediction using LSTM is being made...")
@@ -124,7 +124,7 @@ def predict_with_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val, ep
 
   # Model creation
   lstm_model = Sequential([
-    LSTM(32, input_shape=(number_of_inputs, X_train[0].shape[1], 2), dropout=0.1, recurrent_dropout=0.5, return_sequences=True),
+    LSTM(32, input_shape=(number_of_inputs, 1), dropout=0.1, recurrent_dropout=0.5, return_sequences=True),
     LSTM(64, activation='relu', dropout=0.1, recurrent_dropout=0.5),
     #LSTM(100, activation='relu'),
     Dense(number_of_outputs)
@@ -162,8 +162,6 @@ def predict_with_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val, ep
 
   print(lstm_model_results.shape)
   print(y_val.shape)
-  print("Predicho: "+str(np.sum((lstm_model_results[0])[lstm_model_results[0] > 0])))
-  print("Real: "+str(np.sum((y_val[0])[y_val[0] > 0])))
   lstm_train_results = pd.DataFrame(data={'Timestamp':dates_val[0], 'Predicted Values':lstm_model_results[0], 'Real Values':y_val[0]})
 
   return (lstm_train_results, lstm_model_results, y_val)
@@ -177,7 +175,7 @@ def predict_with_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val, epo
 
   # Model creation
   lstm_model = Sequential([
-    GRU(32, input_shape=(number_of_inputs, X_train[0].shape[1], 2), dropout=0.1, recurrent_dropout=0.5, return_sequences=True),
+    GRU(32, input_shape=(number_of_inputs, 1), dropout=0.1, recurrent_dropout=0.5, return_sequences=True),
     GRU(64, activation='relu', dropout=0.1, recurrent_dropout=0.5),
     Dense(number_of_outputs)
     ]
@@ -222,17 +220,14 @@ def predict_with_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val, epo
 def predict_with_RNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=100):
   # Message of indentification
   print("Prediction using Simple RNN is being made...")
-  X_train = X_train.reshape(len(X_train), 168, 2)
-  X_val = X_val.reshape(len(X_val), 168, 2)
-  print(X_train.shape)
 
   number_of_inputs = int(X_train.shape[1])
   number_of_outputs = int(y_train.shape[1])
 
   # Model creation
   lstm_model = Sequential([
-    GRU(32, input_shape=(number_of_inputs, 2), dropout=0.1, recurrent_dropout=0.5, return_sequences=True),
-    GRU(64, activation='relu', dropout=0.1, recurrent_dropout=0.5),
+    SimpleRNN(32, input_shape=(number_of_inputs, 1), dropout=0.1, recurrent_dropout=0.5, return_sequences=True),
+    SimpleRNN(64, activation='relu', dropout=0.1, recurrent_dropout=0.5),
     #SimpleRNN(32, activation='relu'),
     Dense(number_of_outputs)
     ]
@@ -277,12 +272,9 @@ def predict_with_CNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epo
   number_of_inputs = int(X_train.shape[1])
   number_of_outputs = int(y_train.shape[1])
 
-  X_train = X_train.reshape(len(X_train), 168, 2)
-  X_val = X_val.reshape(len(X_val), 168, 2)
-
   # Model creation
   lstm_model = Sequential([
-    Conv1D(32, (number_of_inputs), activation='relu', input_shape=(168, 2)),
+    Conv1D(32, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, 1)),
     Flatten(),
     Dense(number_of_outputs)]
   )
@@ -302,7 +294,7 @@ def predict_with_CNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epo
   lstm_model.compile(loss=MeanAbsoluteError(), optimizer=RMSprop(), metrics=[RootMeanSquaredError()])
   #lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs)
   lstm_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs, callbacks=[early_stopping_monitor])
-  loss, accuracy = lstm_model.evaluate(X_val, y_val)
+  loss, accuracy = lstm_model.evaluate(X_test, y_test)
   # Imprimir las métricas
   print("Loss:", loss)
   print("Accuracy:", accuracy)
@@ -333,7 +325,7 @@ def predict_with_CNN_SimpleRNN(dates_train, dates_val, X_train, y_train, X_val, 
 
   # Model creation
   lstm_model = Sequential([
-    Conv1D(32, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, X_train[0].shape[1], 2)),
+    Conv1D(32, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, 1)),
     #Flatten(),
     SimpleRNN(32),
     Dense(number_of_outputs)]
@@ -365,7 +357,6 @@ def predict_with_CNN_SimpleRNN(dates_train, dates_val, X_train, y_train, X_val, 
   # Predicting and saving results
 
   lstm_model_results = lstm_model.predict(X_val)
-  
 
   print("Predicho: "+str(np.sum((lstm_model_results[0])[lstm_model_results[0] > 0])))
   print("Real: "+str(np.sum((y_val[0])[y_val[0] > 0])))
@@ -382,7 +373,7 @@ def predict_with_CNN_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val
 
   # Model creation
   lstm_model = Sequential([
-    Conv1D(32, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, X_train[0].shape[1], 2)),
+    Conv1D(32, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, 1)),
     #Flatten(),
     LSTM(32),
     Dense(number_of_outputs)]
@@ -431,7 +422,7 @@ def predict_with_CNN_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val,
 
   # Model creation
   lstm_model = Sequential([
-    Conv1D(32, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, X_train[0].shape[1], 2)),
+    Conv1D(32, (number_of_inputs), activation='relu', input_shape=(number_of_inputs, 1)),
     #Flatten(),
     GRU(32),
     Dense(number_of_outputs)]
@@ -583,13 +574,13 @@ df_historical_data['waterMeasured'] = pd.to_numeric(df_historical_data['waterMea
 # Testing different granularities
 df_historical_data['time_format_granularity'] = df_historical_data['time_format'].dt.floor('Min')
 df_historical_data_granularity = df_historical_data.groupby(['time_format_granularity']).mean().iloc[1:,:]
+df_historical_data_granularity = df_historical_data_granularity.loc[(df_historical_data_granularity.index >= '2023-08-01')]
 df_historical_data_granularity = df_historical_data_granularity.drop(columns=['time'])
-#print(df_historical_data_granularity)
+print(df_historical_data_granularity)
 
 # Converting to 15 minutes
 df_historical_data_granularity['hour'] = df_historical_data_granularity.index.floor('60Min')
 df_historical_data = df_historical_data_granularity.groupby(['hour']).sum().iloc[1:,:]
-df_historical_data['hour'] = df_historical_data.index.hour
 #print(df_historical_data)
 
 #df_historical_data = deleting_outliers(df_historical_data)
@@ -654,31 +645,25 @@ epochs = 10000
 
 # Getting results from every model
 
+
 #CNN
 (cnn_results, pred_val_cnn, real_val_cnn) = predict_with_CNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
-get_performance(pred_val_cnn, real_val_cnn, "RNN")
-cnn_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
-plt.title('Recurrent Neural Network results')
-plt.show()
+
 
 #CNN-RNN
-#(cnn_rnn_results, pred_val_cnn_rnn, real_val_cnn_rnn) = predict_with_CNN_SimpleRNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
+(cnn_rnn_results, pred_val_cnn_rnn, real_val_cnn_rnn) = predict_with_CNN_SimpleRNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
 
 #CNN-LSTM
-#(cnn_lstm_results, pred_val_cnn_lstm, real_val_cnn_lstm) = predict_with_CNN_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
+(cnn_lstm_results, pred_val_cnn_lstm, real_val_cnn_lstm) = predict_with_CNN_LSTM(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
 
 #CNN-GRU
-#(cnn_gru_results, pred_val_cnn_gru, real_val_cnn_gru) = predict_with_CNN_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
+(cnn_gru_results, pred_val_cnn_gru, real_val_cnn_gru) = predict_with_CNN_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
 
 #################################################
 
 
 #RNN
 (rnn_results, pred_val_rnn, real_val_rnn) = predict_with_RNN(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
-get_performance(pred_val_rnn, real_val_rnn, "RNN")
-rnn_results.plot(x='Timestamp', y=['Real Values', 'Predicted Values'])
-plt.title('Recurrent Neural Network results')
-plt.show()
 
 #GRU
 (gru_results, pred_val_gru, real_val_gru) = predict_with_GRU(dates_train, dates_val, X_train, y_train, X_val, y_val, epochs=epochs)
@@ -746,6 +731,7 @@ get_performance(pred_val_cnn, real_val_cnn, "CNN")
 get_performance(pred_val_cnn_rnn, real_val_cnn_rnn, "CNN-RNN")
 get_performance(pred_val_cnn_gru, real_val_cnn_gru, "CNN-GRU")
 get_performance(pred_val_cnn_lstm, real_val_cnn_lstm, "CNN-LSTM")
+
 
 # Plotting
 
